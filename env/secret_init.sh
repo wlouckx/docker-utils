@@ -77,7 +77,7 @@ function usage(){
     "
 }
 
-funtion getArgs() {
+function getArgs() {
     while [ "$#" -gt 0 ]; do case $1 in
         -h|--help) usage; exit 0;;
         --object) object="$2"; shift;;
@@ -167,7 +167,7 @@ function checkBw(){                         # Check for BW-cli, install if not p
 
 function checkJq(){                         # Check for Jq, install if not present
     printOut "Checking if JQ is installed..."
-    if [ -x "$(command -v jq)" ]; then
+    if ! [ -x "$(command -v jq)" ]; then
         if [ "$forceinstall" -ne 1 ]; then
             while true; do
                 read -p "JQ is not installed. Do you want to install JQ? (Y/N):" yn
@@ -193,7 +193,7 @@ function checkJq(){                         # Check for Jq, install if not prese
 
 function createSecret(){
     if [[ "$type" == "note" ]]; then
-        bw --session $id get item $object | jq '.notes' | sed -e 's/\\n/\n/g' | sed s/\"// | docker secret create $secret -
+        bw --session $id get item "$object" | jq '.notes' | sed -e 's/\\n/\n/g' | sed s/\"// | docker secret create $secret -
     elif [[ "$type" == "password" ]]; then
         bw --session $id get password $object | docker secret create $secret -
     else
@@ -205,22 +205,28 @@ function createSecret(){
 
 ## -- Program -- ## 
 
-getArgs;                                      # Read the arguments
+getArgs "$@";                                 # Read the arguments
 checkSudo;                                    # Check for elevated rights
 
 if [ "$skipinstall" -ne 1 ]; then             # Install prereqs if not omitted
-    printout "Checking prerequisites...";
+    printOut "Checking prerequisites...";
     checkBw;
     checkJq;
 else
-    printout "Skipping installation of prerequisites...";
+    printOut "Skipping installation of prerequisites...";
 fi
 
-printout "\nPrechecks done \n\nRequesting Bitwarden session ID...";
+printOut "
+Prechecks done
+
+Requesting Bitwarden session ID...";
 
 id=`bw login ${email}${password}--raw`;     # Get our Session ID
+if [ -z $id ]; then
+    id=`bw unlock ${password}--raw`;
+fi
 
-printout "Obtained session ID. Creating secret(s)...";
+printOut "Obtained session ID. Creating secret(s)...";
 
 if [ -r "$bulkfile" ]; then                 # Check if we are in bulkmode and read file or execute single creation from arguments
     while read -r line; do
