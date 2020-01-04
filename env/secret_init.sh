@@ -37,11 +37,16 @@ secret='';
 skipinstall=0;
 forceinstall=0;
 silent=0;
+installonly=0;
 
 email='';
 password='';
-code='';
+totp='';
 bulkfile='';
+
+code='';
+2fa='';
+
 
 ## -- Functions -- ## 
 
@@ -65,10 +70,16 @@ function usage(){
                                             --forceinstall is implied.
         --email <email>                     Email adres to login into Bitwarden
         --password <password>               The vaults master password
+        --totp <key>                        Pass the Bitwarden TOTP base32 key for automatic
+                                            login with 2FA. The code will be generated with
+                                            oathtool
         --bulk <file>                       Create secrets in bulk with an input file (omits
                                             required fields). The file should contain one
                                             secret per line in following format:
                                             <object> <type> <secret name>
+        --installonly                       Only install all necessary packages. This removes
+                                            the need of the required options. --forceinstall
+                                            is implied.
 
         -h, --help                          Print this message
 
@@ -89,11 +100,13 @@ function getArgs() {
         --email) email="$2 "; shift;;               #include extra space for easy string building later on
         --password) password="$2 "; shift;;         #include extra space for easy string building later on
         --bulk) bulkfile="$2"; shift;;
+        --totp) totp="$2"; shift;;
+        --installonly) installonly=1; forceinstall=1;;
         *) >&2 echo "Unknown parameter passed: $1"; usage; exit 1;;
     esac; shift; done
 
     # validation of required fields
-    if [ -z "$bulkfile" ]; then
+    if [ -z "$bulkfile" ] || [ "$installonly" -eq 0 ]; then
         if [ -z "$object" ]; then
             >&2 echo "Object not set";
             usage;
@@ -114,7 +127,7 @@ function getArgs() {
             usage;
             exit 1;
         fi
-    else
+    elif [ -n "$bulkfile" ] || [ "$installonly" -eq 0 ]; then
         if ! [ -r "$bulkfile" ]; then
             >&2 echo "Cannot read the inputfile $bulkfile";
         fi
@@ -191,6 +204,33 @@ function checkJq(){                         # Check for Jq, install if not prese
     fi
 }
 
+function checkOath(){                         # Check for Oathtool, install if not present
+    printOut "Checking if oathtool is installed..."
+    if ! [ -x "$(command -v oathtool)" ]; then
+        if [ "$forceinstall" -ne 1 ]; then
+            while true; do
+                read -p "Oathtool is not installed. Do you want to install Oathtool? (Y/N):" yn
+                case $yn in
+                    [Yy]* ) break;;
+                    [Nn]* ) exit 4;;
+                    * ) echo "Please answer with Y/N";;
+                esac
+            done
+        fi
+        printOut "Installing Oathtool";
+        apt-get install -y oathtool;
+        if ! [ -x "$(command -v oathtool)" ]; then
+            >&2 echo "Failed to install Oathtool. Please install manually.";
+            exit 1;
+        else
+            printOut "Oathtool installed.";
+        fi
+    else
+    printOut "Ok.";
+    fi
+}
+
+
 function createSecret(){
     if [[ "$type" == "note" ]]; then
         bw --session $id get item "$object" | jq '.notes' | sed -e 's/\\n/\n/g' | sed s/\"// | docker secret create $secret -
@@ -212,36 +252,44 @@ if [ "$skipinstall" -ne 1 ]; then             # Install prereqs if not omitted
     printOut "Checking prerequisites...";
     checkBw;
     checkJq;
+    checkOath;
 else
     printOut "Skipping installation of prerequisites...";
 fi
 
-printOut "
-Prechecks done
+if [ "$installonly" -eq 0 ]; then
+    printOut "
+    Prechecks done
 
-Requesting Bitwarden session ID...";
+    Requesting Bitwarden session ID...";
+    if [ -n "$totp" ]; then
+        code=`oathtool -b --totp ${totp}`;
+        2fa="--method 1 --code ${code} ";
+    fi
 
-id=`bw login ${email}${password}--raw`;     # Get our Session ID
-if [ -z $id ]; then
-    id=`bw unlock ${password}--raw`;
+    id=`bw login ${email}${password}${code}--raw`;     # Get our Session ID
+    if [ -z $id ]; then
+        id=`bw unlock ${password}--raw`;
+    fi
+
+    printOut "Obtained session ID. Syncing Vault...";
+    bw sync;
+    printOut "Sync done. Creating secrets";
+
+    if [ -r "$bulkfile" ]; then                 # Check if we are in bulkmode and read file or execute single creation from arguments
+        while read -r line; do
+            read -ra arr <<<"$line"
+            object=$arr[0];
+            type=$arr[1];
+            secret=$arr[2];
+            if [ -n "$object" ] && [ -n "$type" ] && [ -n "$secret" ]; then
+                createSecret;
+            else
+                >&2 echo "The following line does not contain 3 values: $line";
+            fi
+        done < $bulkfile
+    else
+        createSecret;
+    fi
 fi
-
-printOut "Obtained session ID. Creating secret(s)...";
-
-if [ -r "$bulkfile" ]; then                 # Check if we are in bulkmode and read file or execute single creation from arguments
-    while read -r line; do
-        read -ra arr <<<"$line"
-        object=$arr[0];
-        type=$arr[1];
-        secret=$arr[2];
-        if [ -n "$object" ] && [ -n "$type" ] && [ -n "$secret" ]; then
-            createSecret;
-        else
-            >&2 echo "The following line does not contain 3 values: $line";
-        fi
-    done < $bulkfile
-else
-    createSecret;
-fi
-
 exit 0;
