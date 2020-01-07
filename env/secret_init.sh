@@ -2,7 +2,7 @@
 
 ## Description -------------------------------------------------------------------------- #
 #  
-#  REMARKS: THIS SCRIPT IS UNFINISHED AND NOT TESTED
+#  REMARKS: Use this script at your own risk. It might not be compatible with your setup!
 #
 #  This script will get secret information for docker from a Bitwarden Vault. The script
 #  will ask for the users credentials during run, unless they are provided as arugments.
@@ -72,7 +72,8 @@ function usage(){
         --password <password>               The vaults master password
         --totp <key>                        Pass the Bitwarden TOTP base32 key for automatic
                                             login with 2FA. The code will be generated with
-                                            oathtool
+                                            oathtool. The tool will look for a file .totp
+                                            regardess of this option
         --bulk <file>                       Create secrets in bulk with an input file (omits
                                             required fields). The file should contain one
                                             secret per line in following format:
@@ -262,6 +263,9 @@ if [ "$installonly" -eq 0 ]; then
     Prechecks done
 
     Requesting Bitwarden session ID...";
+    if [ -z "$totp" ] && [ -r ".totp" ]; then
+        totp=`head -1 .totp`;
+    fi
     if [ -n "$totp" ]; then
         code=`oathtool -b --totp ${totp}`;
         2fa="--method 1 --code ${code} ";
