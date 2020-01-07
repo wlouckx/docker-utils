@@ -98,8 +98,8 @@ function getArgs() {
         --skipinstall) skipinstall=1;;
         -f|--forceinstall) forceinstall=1;;
         -s|--silent) silent=1; forceinstall=1;;
-        --email) email="$2 "; shift;;               #include extra space for easy string building later on
-        --password) password="$2 "; shift;;         #include extra space for easy string building later on
+        --email) email="$2"; shift;;
+        --password) password="$2"; shift;;
         --bulk) bulkfile="$2"; shift;;
         --totp) totp="$2"; shift;;
         --installonly) installonly=1; forceinstall=1;;
@@ -135,13 +135,13 @@ function getArgs() {
     fi
 }
 
-function printOut() {                       # Silent mode check
+function printOut() {                                                                              # Silent mode check
     if [ "$silent" -ne 1 ]; then
         echo $1;
     fi
 }
 
-function checkSudo(){                       # Function to check elevated rights
+function checkSudo(){                                                                              # Function to check elevated rights
     printOut "Checking elevated rights..."
     if [ "$EUID" -ne 0 ]; then
         >&2 echo "Please run as root/sudo";
@@ -152,7 +152,7 @@ function checkSudo(){                       # Function to check elevated rights
 }
 
 
-function checkBw(){                         # Check for BW-cli, install if not present
+function checkBw(){                                                                                # Check for BW-cli, install if not present
     printOut "Checking if Bitwarden is installed..."
     if ! [ -x "$(command -v bw)" ]; then                            
         while true; do
@@ -179,7 +179,7 @@ function checkBw(){                         # Check for BW-cli, install if not p
     fi
 }
 
-function checkJq(){                         # Check for Jq, install if not present
+function checkJq(){                                                                                # Check for Jq, install if not present
     printOut "Checking if JQ is installed..."
     if ! [ -x "$(command -v jq)" ]; then
         if [ "$forceinstall" -ne 1 ]; then
@@ -205,7 +205,7 @@ function checkJq(){                         # Check for Jq, install if not prese
     fi
 }
 
-function checkOath(){                         # Check for Oathtool, install if not present
+function checkOath(){                                                                              # Check for Oathtool, install if not present
     printOut "Checking if oathtool is installed..."
     if ! [ -x "$(command -v oathtool)" ]; then
         if [ "$forceinstall" -ne 1 ]; then
@@ -244,12 +244,20 @@ function createSecret(){
 
 }
 
+function varInFile() {                                                                             # varInFile <variable>: Checks if variable is set, if not it will look for a file named .variable
+    var=$1
+    if [ -z "${!var}" ] && [ -r ".$var" ]; then                                                    # ${!var} returns the value of $var as name of a variable
+        output=`head -1 .$var`;
+        eval $var=\$output;                                                                        # Sets the value of output to the value of $var as variable. Escapes any special characters in output with \$
+    fi
+}
+
 ## -- Program -- ## 
 
-getArgs "$@";                                 # Read the arguments
-checkSudo;                                    # Check for elevated rights
+getArgs "$@";                                                                                      # Read the arguments
+checkSudo;                                                                                         # Check for elevated rights
 
-if [ "$skipinstall" -ne 1 ]; then             # Install prereqs if not omitted
+if [ "$skipinstall" -ne 1 ]; then                                                                  # Install prereqs if not omitted
     printOut "Checking prerequisites...";
     checkBw;
     checkJq;
@@ -263,15 +271,16 @@ if [ "$installonly" -eq 0 ]; then
     Prechecks done
 
     Requesting Bitwarden session ID...";
-    if [ -z "$totp" ] && [ -r ".totp" ]; then
-        totp=`head -1 .totp`;
-    fi
+    varInFile totp                                                                                 # check for key in .totp if any
     if [ -n "$totp" ]; then
         code=`oathtool -b --totp ${totp}`;
-        2fa="--method 1 --code ${code} ";
+        2fa="--method 1 --code ${code}";
     fi
+    
+    varInFile email                                                                                # check for email in .email if any
+    varInFile password                                                                             # check for password in .password
 
-    id=`bw login ${email}${password}${code}--raw`;     # Get our Session ID
+    id=`bw login ${email} ${password} ${code} --raw`;                                              # Get our Session ID
     if [ -z $id ]; then
         id=`bw unlock ${password}--raw`;
     fi
@@ -280,7 +289,7 @@ if [ "$installonly" -eq 0 ]; then
     bw sync;
     printOut "Sync done. Creating secrets";
 
-    if [ -r "$bulkfile" ]; then                 # Check if we are in bulkmode and read file or execute single creation from arguments
+    if [ -r "$bulkfile" ]; then                                                                    # Check if we are in bulkmode and read file or execute single creation from arguments
         while read -r line; do
             read -ra arr <<<"$line"
             object=$arr[0];
