@@ -6,9 +6,11 @@
 #           Use this script at your own risk. It might not be compatible with your setup!
 #
 #  This script checks out a git repo, loads secrets into docker, and runs 'docker stack
-#  deploy'. This script can run with or without arguments. arguments can be
-#  in a dockerstart.conf file, pre-configured in this file, or let the script
-#  automatically detect if there is a .git folder, secrets.txt or docker-compose.yml file
+#  deploy'. This script can run with or without arguments.
+#  The configuration can be specified by arguments, a specific config file, environment
+#  variables, in a dockerstart.conf file, pre-configured in this file. 
+#  If a file or git folder is not found, the task will be skipped. Other errors will 
+#  result in EC 1.
 #
 #  Attention: the secrets.txt file should contain the secrets from Bitwarden in
 #             following format:
@@ -24,6 +26,9 @@
 #   99: Script is not ready
 #
 #  More info in the usage function below.
+#
+#
+#
 #
 ## -------------------------------------------------------------------------------------- #        
 
